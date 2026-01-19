@@ -238,7 +238,7 @@ if process_btn:
                         model_id="scribe_v2", 
                         tag_audio_events=True, # Enable audio event tagging (Scribe v2 feature)
                         language_code="en",
-                        transcription_hints=hints,
+                        keyterms=hints,
                         detect_entities=True,
                         diarize=True
                     )
