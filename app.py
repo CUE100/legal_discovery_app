@@ -214,7 +214,7 @@ if process_btn:
         # Prepare hints
         hints = [term.strip() for term in keyterms_input.split(',')] if keyterms_input else []
         
-        files_to_process = uploaded_files[:5] # Limit batch size for performance
+        files_to_process = uploaded_files # Process all uploaded files
         total_files = len(files_to_process)
         
         for i, uploaded_file in enumerate(files_to_process):
