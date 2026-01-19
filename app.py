@@ -268,17 +268,29 @@ if process_btn:
                 # If SDK logic varies, we default to empty list to avoid crash.
                 if hasattr(transcription, 'entities'):
                         result_data['entities'] = [
-                            {'text': e.text, 'type': e.type} for e in transcription.entities
+                            {'text': e.text, 'type': getattr(e, 'entity_type', getattr(e, 'type', 'Entity'))} 
+                            for e in transcription.entities
                         ]
                 
                 st.session_state.processed_results.append(result_data)
                 
             except Exception as e:
-                st.error(f"Error processing {uploaded_file.name}: {str(e)}")
+                error_msg = str(e)
+                if "detected_unusual_activity" in error_msg or "401" in error_msg:
+                    st.error(
+                        "⚠️ **ElevenLabs Account Restriction**\n\n"
+                        "ElevenLabs has flagged this request as 'Unusual Activity' (common on Free Tier). "
+                        "To fix this, please:\n"
+                        "1. **Disable any VPNs/Proxies** if you are on the Free Tier.\n"
+                        "2. **Upgrade to a Paid Plan** (Starter/Creator) to bypass these security blocks.\n"
+                        "3. Verify your API Key is correct in the sidebar."
+                    )
+                else:
+                    st.error(f"Error processing {uploaded_file.name}: {error_msg}")
             
             progress_bar.progress((i + 1) / total_files)
         
-        status_text.text("Processing Complete!")
+        status_text.text("Processing Attempted.")
         progress_bar.empty()
 
 # --- Results Display ---
