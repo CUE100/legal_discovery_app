@@ -332,6 +332,7 @@ if st.session_state.processed_results:
 # --- Footer ---
 st.markdown("---")
 st.markdown(
+    """
     <div style='text-align: center; color: #666; font-size: 0.8em; padding: 20px;'>
         Powered by <b>ElevenLabs Scribe v2</b>.<br>
         High-accuracy legal transcription with Keyterm Prompting and Entity Detection.<br>
