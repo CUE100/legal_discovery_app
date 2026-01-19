@@ -1,12 +1,13 @@
 # AI-Powered Legal Discovery Assistant
 
-A Streamlit application designed for the **ElevenLabs Scribe v2 Hackathon**. This tool leverages ElevenLabs' advanced speech recognition to transcribe legal audio evidence, featuring keyterm prompting and entity detection.
+A professional Streamlit application leveraging **ElevenLabs Scribe v2** for high-accuracy legal transcription. This tool is designed to process audio evidence with advanced features like speaker diarization, entity detection, and keyterm prompting.
 
 ## Features
-- **Scribe v2 Integration**: High-accuracy transcription with `transcription_hints`.
-- **Entity Detection**: Automatically identifies people, dates, contract terms, etc.
-- **Secure**: API keys are transient and never stored.
-- **Export**: Download results as txt, JSON, or professional PDF reports.
+- **Scribe v2 Integration**: High-accuracy transcription with `keyterms` support.
+- **Smart Diarization**: Multi-speaker labeling for clear legal transcripts.
+- **Entity Detection**: Automatically identifies people, dates, organizations, and legal terms.
+- **Secure Architecture**: API keys are transient and stored only in session state.
+- **Reporting**: Export results to TXT, JSON, or professional PDF reports.
 
 ## Setup & Run
 
@@ -20,5 +21,6 @@ A Streamlit application designed for the **ElevenLabs Scribe v2 Hackathon**. Thi
    streamlit run app.py
    ```
 
-## Deployment
-Ready for deployment on [Streamlit Community Cloud](https://streamlit.io/cloud). Just connect this repository!
+## Note for Free Tier Users
+ElevenLabs may restrict usage on their Free Tier (Error 401: Unusual Activity). For production-grade stability and to bypass IP blocks, a paid subscription (Starter or higher) is recommended.
+
