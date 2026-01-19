@@ -236,10 +236,10 @@ if process_btn:
                     transcription = client.speech_to_text.convert(
                         file=audio_file,
                         model_id="scribe_v2", 
-                        tag_audio_events=True, # Enable audio event tagging (Scribe v2 feature)
+                        tag_audio_events=True, # Enable audio event tagging
                         language_code="en",
                         keyterms=hints,
-                        detect_entities=True,
+                        entity_detection="all", # Supported by Scribe v2
                         diarize=True
                     )
                 
