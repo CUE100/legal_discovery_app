@@ -25,8 +25,7 @@ if "api_key" not in st.session_state:
     st.session_state.api_key = ""
 if "processed_results" not in st.session_state:
     st.session_state.processed_results = []
-if "demo_mode" not in st.session_state:
-    st.session_state.demo_mode = False
+
 
 # --- Custom Styling ---
 st.markdown("""
@@ -92,42 +91,68 @@ def generate_pdf(results):
         
     return pdf.output(dest='S').encode('latin-1')
 
-def get_demo_data(filename):
-    """Returns mock data for demo mode."""
-    return {
-        "filename": filename,
-        "text": "Mr. John Smith specifically mentioned the breach of contract occurring on July 15th, 2023. \n\n[Speaker B]: We never agreed to those terms in the initial MSA.",
-        "entities": [
-            {"text": "John Smith", "type": "person", "start_time": 0.5, "end_time": 1.2},
-            {"text": "July 15th, 2023", "type": "date", "start_time": 4.5, "end_time": 5.8},
-            {"text": "MSA", "type": "contract", "start_time": 12.0, "end_time": 12.5}
-        ],
-        "status": "completed"
-    }
+
+
+def format_diarized_transcript(words):
+    """Reconstructs transcript with speaker labels from word-level data."""
+    if not words:
+        return ""
+    
+    transcript_lines = []
+    current_speaker = None
+    current_text_chunk = []
+    
+    for word in words:
+        # SDK word object typically has .text and .speaker_id
+        # Fallback for dict access if it's a raw dict
+        text = getattr(word, 'text', word.get('text', ''))
+        speaker = getattr(word, 'speaker_id', word.get('speaker_id', 'Unknown'))
+        
+        # Audio events might come as words or separate logic, usually embedded in text or as types
+        # Scribe v2 might put [laughter] as text.
+        
+        if speaker != current_speaker:
+            if current_speaker is not None:
+                # Flush previous
+                label = current_speaker.replace('_', ' ').title()
+                content = " ".join(current_text_chunk)
+                transcript_lines.append(f"**{label}**: {content}")
+            
+            current_speaker = speaker
+            current_text_chunk = [text]
+        else:
+            current_text_chunk.append(text)
+            
+    # Flush last
+    if current_speaker is not None:
+        label = current_speaker.replace('_', ' ').title()
+        content = " ".join(current_text_chunk)
+        transcript_lines.append(f"**{label}**: {content}")
+        
+    return "\n\n".join(transcript_lines)
 
 def format_transcript_display(text, entities):
     """Formats transcript with highlighted entities for UI."""
-    if not entities:
-        return text
-    
-    # Sort entities by position (if we had char offsets, but ElevenLabs usually gives times)
-    # For this demo/hackathon implementation, we'll do a simple text replacement 
-    # if exact offsets aren't perfect, or just append logical entity usage.
-    # Scribe v2 might return word-level timestamps or character offsets.
-    # Here we will just highlight the text occurrences if exact mapping is complex for a single file snippet. 
-    # But let's try to assume we get a list of entities and we can highlight them.
-    
     formatted_text = text
-    # A simple approach for display: replace known entity strings with highlighted spans
-    # Note: This is a robust-enough approximation for a hackathon demo
-    for entity in entities:
-        e_text = entity.get('text')
-        e_type = entity.get('type', 'ENTITY')
-        if e_text:
-            replacement = f"<span class='entity-tag' title='{e_type}'>{e_text} ({e_type.upper()})</span>"
+    
+    # Simple entity highlighting
+    if entities:
+        # Sort entities by length (descending) to avoid partial replacements issues
+        # e.g. replacing 'John' inside 'John Smith'
+        # A robust way to handle entity highlighting:
+        unique_entities = {e.get('text'): e.get('type') for e in entities if e.get('text')}
+        sorted_entities = sorted(unique_entities.keys(), key=len, reverse=True)
+        
+        for e_text in sorted_entities:
+            e_type = unique_entities[e_text]
+            replacement = f"<span class='entity-tag' title='{e_type}'>{e_text}</span>"
             formatted_text = formatted_text.replace(e_text, replacement)
     
-    return formatted_text.replace("\n", "<br>")
+    # Convert newlines to HTML breaks if they aren't already formatted (Diarized text has markdown **)
+    # We'll treat double newlines as paragraph breaks
+    formatted_text = formatted_text.replace("\n\n", "<br><br>").replace("\n", "<br>")
+    
+    return formatted_text
 
 # --- Sidebar ---
 with st.sidebar:
@@ -142,14 +167,9 @@ with st.sidebar:
     
     if api_key_input:
         st.session_state.api_key = api_key_input
-        st.session_state.demo_mode = False
         st.success("API Key provided")
     else:
-        st.warning("No API Key provided. Switch to Demo Mode?")
-        if st.checkbox("Enable Demo Mode", value=True):
-            st.session_state.demo_mode = True
-        else:
-            st.session_state.demo_mode = False
+        st.warning("Please enter your ElevenLabs API Key to proceed.")
             
     st.markdown("---")
     st.markdown("### About")
@@ -184,8 +204,8 @@ process_btn = st.button("Analyze & Transcribe", disabled=not uploaded_files)
 # --- Processing Logic ---
 
 if process_btn:
-    if not st.session_state.api_key and not st.session_state.demo_mode:
-        st.error("Please provide an API Key or enable Demo Mode in the sidebar.")
+    if not st.session_state.api_key:
+        st.error("Please provide an ElevenLabs API Key in the sidebar to proceed.")
     else:
         st.session_state.processed_results = []
         progress_bar = st.progress(0)
@@ -194,61 +214,62 @@ if process_btn:
         # Prepare hints
         hints = [term.strip() for term in keyterms_input.split(',')] if keyterms_input else []
         
-        files_to_process = uploaded_files[:5] # Limit to 5 for batch safety in this demo
+        files_to_process = uploaded_files[:5] # Limit batch size for performance
         total_files = len(files_to_process)
         
         for i, uploaded_file in enumerate(files_to_process):
             status_text.text(f"Processing {uploaded_file.name} ({i+1}/{total_files})...")
             
             try:
-                if st.session_state.demo_mode:
-                    import time
-                    time.sleep(1.5) # Simulate processing
-                    result_data = get_demo_data(uploaded_file.name)
-                else:
-                    # Initialize Client
-                    client = ElevenLabs(api_key=st.session_state.api_key)
-                    
-                    # Save to temp file because SDK often needs a path or file-like object
-                    # Streamlit UploadedFile is file-like, but let's be safe with temp
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as tmp_file:
-                        tmp_file.write(uploaded_file.getvalue())
-                        tmp_path = tmp_file.name
-                    
-                    # Call Scribe v2
-                    # Note: We use the 'scribe_v2' model and requested parameters
-                    with open(tmp_path, 'rb') as audio_file:
-                        transcription = client.speech_to_text.convert(
-                            file=audio_file,
-                            model_id="scribe_v2", 
-                            tag_audio_events=False,
-                            language_code="en",
-                            # Scribe v2 specific parameters
-                            # Note: Ensure your SDK version supports these
-                            transcription_hints=hints,
-                            detect_entities=True,
-                            diarize=True
-                        )
-                    
-                    os.unlink(tmp_path) # Clean up
-                    
-                    # Parse Result
-                    # The SDK returns a Transcription object. We need to extract text and entities.
-                    # Adjusting attribute access based on typical SDK response structure
-                    result_data = {
-                        "filename": uploaded_file.name,
-                        "text": getattr(transcription, 'text', str(transcription)),
-                        "entities": [], # Populate if available in response
-                        "status": "success"
-                    }
-                    
-                    # Attempt to extract entities if available in the raw response or attributes
-                    # For v2, entities might be in a specific property. 
-                    # If SDK logic varies, we default to empty list to avoid crash.
-                    if hasattr(transcription, 'entities'):
-                         result_data['entities'] = [
-                             {'text': e.text, 'type': e.type} for e in transcription.entities
-                         ]
+                # Initialize Client
+                client = ElevenLabs(api_key=st.session_state.api_key)
+                
+                # Save to temp file because SDK often needs a path or file-like object
+                # Streamlit UploadedFile is file-like, but let's be safe with temp
+                with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as tmp_file:
+                    tmp_file.write(uploaded_file.getvalue())
+                    tmp_path = tmp_file.name
+                
+                # Call Scribe v2
+                # We use the 'scribe_v2' model and requested parameters
+                with open(tmp_path, 'rb') as audio_file:
+                    transcription = client.speech_to_text.convert(
+                        file=audio_file,
+                        model_id="scribe_v2", 
+                        tag_audio_events=True, # Enable audio event tagging (Scribe v2 feature)
+                        language_code="en",
+                        transcription_hints=hints,
+                        detect_entities=True,
+                        diarize=True
+                    )
+                
+                os.unlink(tmp_path) # Clean up
+                
+                # Parse Result
+                # Try to get diarized text if available
+                raw_text = getattr(transcription, 'text', str(transcription))
+                formatted_transcript = raw_text
+                
+                words = getattr(transcription, 'words', [])
+                if words:
+                     diarized_text = format_diarized_transcript(words)
+                     if diarized_text:
+                         formatted_transcript = diarized_text
+                
+                result_data = {
+                    "filename": uploaded_file.name,
+                    "text": formatted_transcript,
+                    "entities": [], # Populate if available in response
+                    "status": "success"
+                }
+                
+                # Attempt to extract entities if available in the raw response or attributes
+                # For v2, entities might be in a specific property. 
+                # If SDK logic varies, we default to empty list to avoid crash.
+                if hasattr(transcription, 'entities'):
+                        result_data['entities'] = [
+                            {'text': e.text, 'type': e.type} for e in transcription.entities
+                        ]
                 
                 st.session_state.processed_results.append(result_data)
                 
@@ -306,16 +327,15 @@ if st.session_state.processed_results:
                 if entities:
                     st.json(entities)
                 else:
-                    st.info("No entities detected or entity detection not supported in this mode.")
+                    st.info("No entities detected.")
 
 # --- Footer ---
 st.markdown("---")
 st.markdown(
-    """
     <div style='text-align: center; color: #666; font-size: 0.8em; padding: 20px;'>
-        Built for <b>ElevenLabs Scribe v2 Hackathon</b>.<br>
-        Uses keyterm prompting and entity detection for legal e-discovery.<br>
-        Configurable API key—no sharing required.
+        Powered by <b>ElevenLabs Scribe v2</b>.<br>
+        High-accuracy legal transcription with Keyterm Prompting and Entity Detection.<br>
+        Secure API Key usage.
     </div>
     """, 
     unsafe_allow_html=True
