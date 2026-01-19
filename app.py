@@ -224,30 +224,36 @@ if process_btn:
                 # Initialize Client
                 client = ElevenLabs(api_key=st.session_state.api_key)
                 
-                # Save to temp file because SDK often needs a path or file-like object
-                # Streamlit UploadedFile is file-like, but let's be safe with temp
-                with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as tmp_file:
+                # Save to temp file using a safe suffix to avoid path encoding issues
+                file_extension = uploaded_file.name.split('.')[-1]
+                with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as tmp_file:
                     tmp_file.write(uploaded_file.getvalue())
                     tmp_path = tmp_file.name
                 
                 # Call Scribe v2
-                # We use the 'scribe_v2' model and requested parameters
                 with open(tmp_path, 'rb') as audio_file:
                     transcription = client.speech_to_text.convert(
                         file=audio_file,
                         model_id="scribe_v2", 
-                        tag_audio_events=True, # Enable audio event tagging
+                        tag_audio_events=True,
                         language_code="en",
                         keyterms=hints,
-                        entity_detection="all", # Supported by Scribe v2
+                        entity_detection="all",
                         diarize=True
                     )
                 
                 os.unlink(tmp_path) # Clean up
                 
-                # Parse Result
-                # Try to get diarized text if available
-                raw_text = getattr(transcription, 'text', str(transcription))
+                # Parse Result safely
+                raw_text = ""
+                if hasattr(transcription, 'text'):
+                    raw_text = transcription.text
+                else:
+                    try:
+                        raw_text = str(transcription)
+                    except UnicodeEncodeError:
+                        raw_text = repr(transcription)
+                
                 formatted_transcript = raw_text
                 
                 words = getattr(transcription, 'words', [])
@@ -259,13 +265,10 @@ if process_btn:
                 result_data = {
                     "filename": uploaded_file.name,
                     "text": formatted_transcript,
-                    "entities": [], # Populate if available in response
+                    "entities": [],
                     "status": "success"
                 }
                 
-                # Attempt to extract entities if available in the raw response or attributes
-                # For v2, entities might be in a specific property. 
-                # If SDK logic varies, we default to empty list to avoid crash.
                 if hasattr(transcription, 'entities'):
                         result_data['entities'] = [
                             {'text': e.text, 'type': getattr(e, 'entity_type', getattr(e, 'type', 'Entity'))} 
@@ -275,7 +278,12 @@ if process_btn:
                 st.session_state.processed_results.append(result_data)
                 
             except Exception as e:
-                error_msg = str(e)
+                # Safely capture error message even if it contains non-ASCII
+                try:
+                    error_msg = str(e)
+                except UnicodeEncodeError:
+                    error_msg = repr(e)
+                
                 if "detected_unusual_activity" in error_msg or "401" in error_msg:
                     st.error(
                         "⚠️ **ElevenLabs Account Restriction**\n\n"
